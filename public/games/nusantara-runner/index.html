@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Nusantara Runner - Travelista Games</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body, html { width: 100%; height: 100%; overflow: hidden; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    #canvas { width: 100%; height: 100%; display: block; }
+    #ui-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+    .hud { position: absolute; top: 15px; left: 15px; display: flex; gap: 12px; pointer-events: auto; }
+    .hud-badge { background: rgba(15, 23, 42, 0.85); color: #fff; padding: 6px 14px; border-radius: 9999px; font-weight: 800; font-size: 13px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 4px 10px rgba(0,0,0,0.3); backdrop-filter: blur(4px); }
+    .hud-badge span { color: #f59e0b; }
+    #game-over-screen, #start-screen { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto; color: #fff; text-align: center; padding: 20px; }
+    .btn { background: #e53935; color: #fff; border: none; padding: 12px 28px; border-radius: 12px; font-weight: 800; font-size: 15px; cursor: pointer; transition: all 0.2s; margin-top: 16px; box-shadow: 0 8px 20px rgba(229, 57, 53, 0.4); }
+    .btn:hover { background: #c62828; transform: translateY(-2px); }
+    .btn:active { transform: translateY(0); }
+    .title { font-size: 26px; font-weight: 900; margin-bottom: 6px; }
+    .subtitle { font-size: 13px; color: #94a3b8; max-width: 320px; line-height: 1.4; }
+    .controls-hint { margin-top: 14px; font-size: 11px; color: #cbd5e1; background: rgba(255,255,255,0.08); padding: 6px 14px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="ui-overlay">
+    <div class="hud">
+      <div class="hud-badge">Skor: <span id="hud-score">0</span> pts</div>
+      <div class="hud-badge">Koin: <span id="hud-coins">0</span> 🪙</div>
+    </div>
+
+    <!-- Start Screen -->
+    <div id="start-screen">
+      <div style="font-size: 48px; margin-bottom: 8px;">🏃‍♂️</div>
+      <h1 class="title">Nusantara Runner</h1>
+      <p class="subtitle">Lari melintasi jalanan Malioboro, Bromo, hingga Pantai Kuta. Kumpulkan koin dan raih rekor skor!</p>
+      <div class="controls-hint">Tekan <b>SPASI / TAP LAYAR</b> untuk Lompat</div>
+      <button class="btn" id="start-btn">Mulai Bermain</button>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="game-over-screen" style="display: none;">
+      <div style="font-size: 48px; margin-bottom: 8px;">💥</div>
+      <h2 class="title" style="color: #ef4444;">Perjalanan Terhenti!</h2>
+      <p class="subtitle">Kamu menabrak rintangan di jalan.</p>
+      <div style="font-size: 22px; font-weight: 900; color: #f59e0b; margin-top: 10px;" id="final-score">0 pts</div>
+      <button class="btn" id="restart-btn">Coba Lagi</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const hudScore = document.getElementById('hud-score');
+    const hudCoins = document.getElementById('hud-coins');
+    const startScreen = document.getElementById('start-screen');
+    const gameOverScreen = document.getElementById('game-over-screen');
+    const finalScoreEl = document.getElementById('final-score');
+    const startBtn = document.getElementById('start-btn');
+    const restartBtn = document.getElementById('restart-btn');
+
+    let width, height;
+    function resize() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Audio SFX using Web Audio API (Zero external assets needed)
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioContext();
+    function playBeep(freq, type, duration) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    }
+
+    // Game State
+    let isPlaying = false;
+    let score = 0;
+    let coins = 0;
+    let speed = 6;
+    let gravity = 0.65;
+
+    // Player Object
+    const player = {
+      x: 80,
+      y: 0,
+      width: 44,
+      height: 54,
+      vy: 0,
+      isGrounded: false,
+      color: '#e53935'
+    };
+
+    let groundY = height - 100;
+    let obstacles = [];
+    let coinItems = [];
+    let scenery = [];
+
+    // Background mountains
+    for (let i = 0; i < 5; i++) {
+      scenery.push({
+        x: i * (width / 3),
+        w: 260,
+        h: 120 + Math.random() * 80,
+        color: i % 2 === 0 ? '#1e293b' : '#334155'
+      });
+    }
+
+    function spawnObstacle() {
+      if (!isPlaying) return;
+      const type = Math.random() > 0.5 ? 'becak' : 'koper';
+      obstacles.push({
+        x: width + 50,
+        y: groundY - (type === 'becak' ? 40 : 30),
+        w: type === 'becak' ? 44 : 32,
+        h: type === 'becak' ? 40 : 30,
+        type: type,
+        color: type === 'becak' ? '#f59e0b' : '#3b82f6'
+      });
+    }
+
+    function spawnCoin() {
+      if (!isPlaying) return;
+      coinItems.push({
+        x: width + 60,
+        y: groundY - 70 - Math.random() * 60,
+        radius: 12
+      });
+    }
+
+    let obsTimer = 0;
+    let coinTimer = 0;
+
+    function jump() {
+      if (!isPlaying) return;
+      if (player.isGrounded) {
+        player.vy = -14;
+        player.isGrounded = false;
+        playBeep(440, 'sine', 0.15);
+      }
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' || e.code === 'ArrowUp') {
+        jump();
+      }
+    });
+    canvas.addEventListener('pointerdown', jump);
+
+    function start() {
+      startScreen.style.display = 'none';
+      gameOverScreen.style.display = 'none';
+      score = 0;
+      coins = 0;
+      speed = 6;
+      obstacles = [];
+      coinItems = [];
+      groundY = height - 100;
+      player.y = groundY - player.height;
+      player.vy = 0;
+      player.isGrounded = true;
+      isPlaying = true;
+    }
+
+    function gameOver() {
+      isPlaying = false;
+      playBeep(180, 'sawtooth', 0.35);
+      finalScoreEl.innerText = score.toLocaleString('id-ID') + ' pts';
+      gameOverScreen.style.display = 'flex';
+
+      // Kirim event skor ke Next.js Portal induk via postMessage!
+      if (window.parent) {
+        window.parent.postMessage({
+          type: 'GAME_OVER',
+          gameId: 'nusantara-runner',
+          score: score
+        }, '*');
+      }
+    }
+
+    startBtn.addEventListener('click', start);
+    restartBtn.addEventListener('click', start);
+
+    // Main Game Loop
+    function loop() {
+      ctx.clearRect(0, 0, width, height);
+
+      // Sky gradient
+      const skyGrad = ctx.createLinearGradient(0, 0, 0, height);
+      skyGrad.addColorStop(0, '#0f172a');
+      skyGrad.addColorStop(1, '#1e1b4b');
+      ctx.fillStyle = skyGrad;
+      ctx.fillRect(0, 0, width, height);
+
+      // Distant Mountains (Parallax)
+      scenery.forEach(s => {
+        if (isPlaying) s.x -= speed * 0.2;
+        if (s.x + s.w < 0) s.x = width;
+        ctx.fillStyle = s.color;
+        ctx.beginPath();
+        ctx.moveTo(s.x, groundY);
+        ctx.lineTo(s.x + s.w / 2, groundY - s.h);
+        ctx.lineTo(s.x + s.w, groundY);
+        ctx.fill();
+      });
+
+      // Ground (Road)
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(0, groundY, width, height - groundY);
+      ctx.fillStyle = '#e2e8f0';
+      for (let x = (Date.now() * speed * 0.05) % 60; x < width; x += 60) {
+        ctx.fillRect(width - x, groundY + 20, 30, 4);
+      }
+
+      if (isPlaying) {
+        score += 1;
+        speed = 6 + Math.floor(score / 500) * 0.6;
+        hudScore.innerText = score.toLocaleString('id-ID');
+
+        // Physics
+        player.vy += gravity;
+        player.y += player.vy;
+        if (player.y >= groundY - player.height) {
+          player.y = groundY - player.height;
+          player.vy = 0;
+          player.isGrounded = true;
+        }
+
+        // Spawn Spawner
+        obsTimer++;
+        if (obsTimer > 90 + Math.random() * 50) {
+          spawnObstacle();
+          obsTimer = 0;
+        }
+        coinTimer++;
+        if (coinTimer > 120) {
+          spawnCoin();
+          coinTimer = 0;
+        }
+      }
+
+      // Draw Player (Backpacker character with backpack)
+      ctx.fillStyle = player.color;
+      ctx.beginPath();
+      ctx.roundRect(player.x, player.y, player.width, player.height, [8]);
+      ctx.fill();
+
+      // Backpack
+      ctx.fillStyle = '#b91c1c';
+      ctx.fillRect(player.x - 10, player.y + 12, 10, 28);
+      // Head / Face
+      ctx.fillStyle = '#fed7aa';
+      ctx.beginPath();
+      ctx.arc(player.x + 22, player.y - 8, 14, 0, Math.PI * 2);
+      ctx.fill();
+      // Hat (Traveler Cap)
+      ctx.fillStyle = '#e53935';
+      ctx.fillRect(player.x + 8, player.y - 22, 28, 8);
+
+      // Obstacles
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const obs = obstacles[i];
+        if (isPlaying) obs.x -= speed;
+        ctx.fillStyle = obs.color;
+        ctx.beginPath();
+        ctx.roundRect(obs.x, obs.y, obs.w, obs.h, [6]);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = '16px sans-serif';
+        ctx.fillText(obs.type === 'becak' ? '🛺' : '🧳', obs.x + 4, obs.y + obs.h - 8);
+
+        // Collision Check
+        if (
+          player.x < obs.x + obs.w &&
+          player.x + player.width > obs.x &&
+          player.y < obs.y + obs.h &&
+          player.y + player.height > obs.y
+        ) {
+          gameOver();
+        }
+
+        if (obs.x + obs.w < 0) obstacles.splice(i, 1);
+      }
+
+      // Coins
+      for (let i = coinItems.length - 1; i >= 0; i--) {
+        const c = coinItems[i];
+        if (isPlaying) c.x -= speed;
+        ctx.fillStyle = '#f59e0b';
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText('🪙', c.x - 7, c.y + 4);
+
+        // Collect Coin
+        const dist = Math.hypot(player.x + 20 - c.x, player.y + 25 - c.y);
+        if (dist < 36) {
+          coins++;
+          score += 150;
+          hudCoins.innerText = coins;
+          playBeep(880, 'sine', 0.1);
+          coinItems.splice(i, 1);
+        }
+
+        if (c.x + c.radius < 0) coinItems.splice(i, 1);
+      }
+
+      requestAnimationFrame(loop);
+    }
+    loop();
+  </script>
+</body>
+</html>
+

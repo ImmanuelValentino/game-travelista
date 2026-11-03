@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Packing Master: Koper Rapi - Travelista Games</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body, html { width: 100%; height: 100%; overflow: hidden; background: #1e1b4b; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; }
+    .header { text-align: center; margin-bottom: 15px; }
+    .title { font-size: 22px; font-weight: 900; }
+    .desc { font-size: 12px; color: #94a3b8; }
+    .game-board { display: flex; gap: 24px; align-items: center; justify-content: center; flex-wrap: wrap; max-width: 90%; }
+    
+    /* Suitcase Container */
+    .suitcase { width: 280px; height: 320px; background: #312e81; border: 6px solid #4338ca; border-radius: 28px; box-shadow: 0 16px 36px rgba(0,0,0,0.5), inset 0 2px 6px rgba(255,255,255,0.1); padding: 14px; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(4, 1fr); gap: 8px; position: relative; }
+    .handle { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); width: 80px; height: 18px; border: 5px solid #4338ca; border-bottom: none; border-radius: 8px 8px 0 0; }
+    .slot { background: rgba(15, 23, 42, 0.5); border-radius: 12px; border: 2px dashed rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+    .slot.drag-over { background: rgba(56, 189, 248, 0.3); border-color: #38bdf8; }
+    
+    /* Item Palette */
+    .palette { display: flex; flex-direction: column; gap: 10px; background: rgba(15, 23, 42, 0.6); padding: 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); }
+    .palette-title { font-size: 12px; font-weight: 800; color: #38bdf8; text-transform: uppercase; margin-bottom: 4px; }
+    .items-container { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    
+    .item { width: 68px; height: 68px; background: #4f46e5; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: grab; box-shadow: 0 4px 10px rgba(0,0,0,0.3); transition: transform 0.15s; font-size: 26px; }
+    .item:hover { transform: scale(1.08); background: #6366f1; }
+    .item:active { cursor: grabbing; transform: scale(0.95); }
+    .item-label { font-size: 9px; font-weight: 700; color: #e0e7ff; margin-top: 2px; }
+
+    /* Modal */
+    #win-modal { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(8px); display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; }
+    .btn { background: #16a34a; color: #fff; border: none; padding: 12px 28px; border-radius: 12px; font-weight: 800; font-size: 15px; cursor: pointer; transition: all 0.2s; margin-top: 16px; box-shadow: 0 8px 20px rgba(22, 163, 74, 0.4); }
+    .btn:hover { background: #15803d; transform: translateY(-2px); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 class="title">Packing Master: Koper Rapi</h1>
+    <p class="desc">Drag & drop seluruh perlengkapan traveling ke dalam koper bagasimu!</p>
+  </div>
+
+  <div class="game-board">
+    <!-- Suitcase -->
+    <div class="suitcase">
+      <div class="handle"></div>
+      <div class="slot" data-index="0"></div>
+      <div class="slot" data-index="1"></div>
+      <div class="slot" data-index="2"></div>
+      <div class="slot" data-index="3"></div>
+      <div class="slot" data-index="4"></div>
+      <div class="slot" data-index="5"></div>
+      <div class="slot" data-index="6"></div>
+      <div class="slot" data-index="7"></div>
+      <div class="slot" data-index="8"></div>
+      <div class="slot" data-index="9"></div>
+      <div class="slot" data-index="10"></div>
+      <div class="slot" data-index="11"></div>
+    </div>
+
+    <!-- Items Palette -->
+    <div class="palette">
+      <div class="palette-title">Barang Bawaan:</div>
+      <div class="items-container" id="palette-items">
+        <div class="item" draggable="true" id="item-camera">📷<span class="item-label">Kamera</span></div>
+        <div class="item" draggable="true" id="item-shoes">🥾<span class="item-label">Sepatu</span></div>
+        <div class="item" draggable="true" id="item-pass">📕<span class="item-label">Paspor</span></div>
+        <div class="item" draggable="true" id="item-thermos">🧉<span class="item-label">Termos</span></div>
+        <div class="item" draggable="true" id="item-sunglass">🕶️<span class="item-label">Kacamata</span></div>
+        <div class="item" draggable="true" id="item-jacket">🧥<span class="item-label">Jaket</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Win Modal -->
+  <div id="win-modal">
+    <div style="font-size: 54px; margin-bottom: 8px;">🧳✨</div>
+    <h2 style="font-size: 26px; font-weight: 900; color: #4ade80;">Koper Siap Berangkat!</h2>
+    <p style="font-size: 13px; color: #cbd5e1; max-width: 320px; line-height: 1.4; margin-top: 4px;">
+      Semua perlengkapan tersusun rapi tanpa ada yang tertinggal.
+    </p>
+    <div style="font-size: 24px; font-weight: 900; color: #f59e0b; margin-top: 12px;">9.500 pts</div>
+    <button class="btn" id="replay-btn">Packing Lagi</button>
+  </div>
+
+  <script>
+    const items = document.querySelectorAll('.item');
+    const slots = document.querySelectorAll('.slot');
+    const winModal = document.getElementById('win-modal');
+    const replayBtn = document.getElementById('replay-btn');
+    const palette = document.getElementById('palette-items');
+
+    // Audio SFX
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioContext();
+    function playBeep(freq, type, duration) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    }
+
+    let draggedItem = null;
+
+    items.forEach(item => {
+      item.addEventListener('dragstart', (e) => {
+        draggedItem = item;
+        setTimeout(() => item.style.opacity = '0.5', 0);
+      });
+      item.addEventListener('dragend', () => {
+        draggedItem.style.opacity = '1';
+        draggedItem = null;
+      });
+    });
+
+    slots.forEach(slot => {
+      slot.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        slot.classList.add('drag-over');
+      });
+      slot.addEventListener('dragleave', () => {
+        slot.classList.remove('drag-over');
+      });
+      slot.addEventListener('drop', (e) => {
+        e.preventDefault();
+        slot.classList.remove('drag-over');
+        if (slot.children.length === 0 && draggedItem) {
+          slot.appendChild(draggedItem);
+          playBeep(520, 'sine', 0.1);
+          checkWin();
+        }
+      });
+    });
+
+    function checkWin() {
+      if (palette.children.length === 0) {
+        setTimeout(() => {
+          playBeep(780, 'sine', 0.35);
+          winModal.style.display = 'flex';
+
+          if (window.parent) {
+            window.parent.postMessage({
+              type: 'GAME_OVER',
+              gameId: 'packing-master',
+              score: 9500
+            }, '*');
+          }
+        }, 300);
+      }
+    }
+
+    replayBtn.addEventListener('click', () => {
+      winModal.style.display = 'none';
+      items.forEach(item => palette.appendChild(item));
+    });
+  </script>
+</body>
+</html>
+

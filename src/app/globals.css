@@ -1,0 +1,64 @@
+@import "tailwindcss";
+@source "../**/*.{js,ts,jsx,tsx,mdx}";
+@source "../../src/**/*.{js,ts,jsx,tsx,mdx}";
+
+@layer base {
+  :root {
+    --color-travelista-red: #E53935;
+    --color-travelista-red-dark: #C62828;
+    --color-travelista-blue: #0284C7;
+    --color-travelista-blue-light: #E0F2FE;
+    --color-travelista-green: #16A34A;
+    --color-travelista-green-light: #DCFCE7;
+    --color-travelista-amber: #F59E0B;
+    --color-canvas-light: #F8FAFC;
+    --color-surface-white: #FFFFFF;
+    --color-neutral-dark: #1A1D20;
+    --color-neutral-gray: #64748B;
+  }
+
+  body {
+    background-color: var(--color-canvas-light);
+    color: var(--color-neutral-dark);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* Custom Marquis Animation for Breaking Ticker */
+@keyframes ticker {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.animate-ticker {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: ticker 35s linear infinite;
+}
+
+.animate-ticker:hover {
+  animation-play-state: paused;
+}
+
+/* Custom Scrollbar for Game Cards & Modals */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}

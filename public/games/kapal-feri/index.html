@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Kapal Feri: Island Hopper - Travelista Games</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body, html { width: 100%; height: 100%; overflow: hidden; background: #0369a1; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    #canvas { width: 100%; height: 100%; display: block; }
+    #ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+    .hud { position: absolute; top: 15px; left: 15px; display: flex; gap: 12px; pointer-events: auto; }
+    .badge { background: rgba(15, 23, 42, 0.85); color: #fff; padding: 6px 14px; border-radius: 9999px; font-weight: 800; font-size: 13px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+    .badge span { color: #38bdf8; }
+    #modal, #start-modal { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto; color: #fff; text-align: center; padding: 20px; }
+    .btn { background: #0284c7; color: #fff; border: none; padding: 12px 28px; border-radius: 12px; font-weight: 800; font-size: 15px; cursor: pointer; transition: all 0.2s; margin-top: 16px; box-shadow: 0 8px 20px rgba(2, 132, 199, 0.4); }
+    .btn:hover { background: #0369a1; transform: translateY(-2px); }
+    .title { font-size: 26px; font-weight: 900; margin-bottom: 6px; }
+    .subtitle { font-size: 13px; color: #94a3b8; max-width: 320px; line-height: 1.4; }
+    .controls { position: absolute; bottom: 20px; right: 20px; display: flex; gap: 10px; pointer-events: auto; }
+    .ctrl-btn { width: 56px; height: 56px; border-radius: 50%; background: rgba(15, 23, 42, 0.7); border: 2px solid rgba(255,255,255,0.3); color: #fff; font-size: 20px; font-weight: bold; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .ctrl-btn:active { background: #0284c7; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="ui">
+    <div class="hud">
+      <div class="badge">Jarak Dermaga: <span id="dist-txt">100%</span></div>
+      <div class="badge">Kecepatan: <span id="speed-txt">0</span> knot</div>
+    </div>
+
+    <!-- Onscreen Touch Controls -->
+    <div class="controls">
+      <div class="ctrl-btn" id="btn-left">◀</div>
+      <div class="ctrl-btn" id="btn-gas">▲</div>
+      <div class="ctrl-btn" id="btn-right">▶</div>
+    </div>
+
+    <!-- Start Modal -->
+    <div id="start-modal">
+      <div style="font-size: 48px; margin-bottom: 8px;">🚢</div>
+      <h1 class="title">Kapal Feri: Island Hopper</h1>
+      <p class="subtitle">Nakhodai kapal feri dari Pelabuhan Merak menuju Bakauheni. Hindari karang laut dan sandarkan kapal dengan mulus!</p>
+      <div style="margin-top: 14px; font-size: 11px; color: #cbd5e1; background: rgba(255,255,255,0.08); padding: 6px 14px; border-radius: 8px;">
+        Gunakan tombol <b>W/A/D</b> atau <b>PANAH KEYBOARD</b>
+      </div>
+      <button class="btn" id="start-btn">Nakhodai Kapal</button>
+    </div>
+
+    <!-- Result Modal -->
+    <div id="modal" style="display: none;">
+      <div style="font-size: 48px; margin-bottom: 8px;" id="modal-icon">🎉</div>
+      <h2 class="title" id="modal-title">Kapal Berhasil Sandar!</h2>
+      <p class="subtitle" id="modal-desc">Penumpang tiba dengan selamat di dermaga tujuan.</p>
+      <div style="font-size: 24px; font-weight: 900; color: #38bdf8; margin-top: 10px;" id="modal-score">0 pts</div>
+      <button class="btn" id="restart-btn">Pelayaran Baru</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const distTxt = document.getElementById('dist-txt');
+    const speedTxt = document.getElementById('speed-txt');
+    const startModal = document.getElementById('start-modal');
+    const modal = document.getElementById('modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalDesc = document.getElementById('modal-desc');
+    const modalIcon = document.getElementById('modal-icon');
+    const modalScore = document.getElementById('modal-score');
+    const startBtn = document.getElementById('start-btn');
+    const restartBtn = document.getElementById('restart-btn');
+
+    let width, height;
+    function resize() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Audio SFX
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioContext();
+    function playBeep(freq, type, duration) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    }
+
+    // Ship Physics
+    let isPlaying = false;
+    let ship = {
+      x: 0,
+      y: 0,
+      angle: -Math.PI / 2,
+      speed: 0,
+      maxSpeed: 4.5,
+      accel: 0.12,
+      turnSpeed: 0.04
+    };
+
+    let targetPier = { x: 0, y: 100, w: 180, h: 40 };
+    let rocks = [];
+    let waves = [];
+    let keys = {};
+
+    window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+    window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+    // Touch Buttons
+    const btnLeft = document.getElementById('btn-left');
+    const btnRight = document.getElementById('btn-right');
+    const btnGas = document.getElementById('btn-gas');
+
+    let touchLeft = false, touchRight = false, touchGas = false;
+    btnLeft.addEventListener('pointerdown', () => touchLeft = true);
+    btnLeft.addEventListener('pointerup', () => touchLeft = false);
+    btnRight.addEventListener('pointerdown', () => touchRight = true);
+    btnRight.addEventListener('pointerup', () => touchRight = false);
+    btnGas.addEventListener('pointerdown', () => touchGas = true);
+    btnGas.addEventListener('pointerup', () => touchGas = false);
+
+    function initGame() {
+      ship.x = width / 2;
+      ship.y = height - 120;
+      ship.angle = -Math.PI / 2;
+      ship.speed = 0;
+      targetPier = { x: width / 2 - 90, y: 50, w: 180, h: 36 };
+
+      // Generate Rocks
+      rocks = [];
+      for (let i = 0; i < 7; i++) {
+        rocks.push({
+          x: 60 + Math.random() * (width - 120),
+          y: 140 + Math.random() * (height - 300),
+          r: 22 + Math.random() * 16
+        });
+      }
+
+      // Sea Waves
+      waves = [];
+      for (let i = 0; i < 20; i++) {
+        waves.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          w: 30 + Math.random() * 40
+        });
+      }
+
+      startModal.style.display = 'none';
+      modal.style.display = 'none';
+      isPlaying = true;
+    }
+
+    function finish(isSuccess) {
+      isPlaying = false;
+      let score = 0;
+      if (isSuccess) {
+        score = Math.floor(8000 + (1 - ship.speed / ship.maxSpeed) * 2000);
+        modalIcon.innerText = '🚢';
+        modalTitle.innerText = 'Kapal Berhasil Sandar!';
+        modalTitle.style.color = '#38bdf8';
+        modalDesc.innerText = 'Dermaga Bakauheni menyambut kedatanganmu dengan sempurna.';
+        modalScore.innerText = score.toLocaleString('id-ID') + ' pts';
+        playBeep(600, 'sine', 0.4);
+      } else {
+        score = 1200;
+        modalIcon.innerText = '💥';
+        modalTitle.innerText = 'Kapal Menabrak Karang!';
+        modalTitle.style.color = '#ef4444';
+        modalDesc.innerText = 'Kemudi harus lebih berhati-hati saat melintasi selat.';
+        modalScore.innerText = score.toLocaleString('id-ID') + ' pts';
+        playBeep(140, 'sawtooth', 0.5);
+      }
+
+      modal.style.display = 'flex';
+
+      // Send postMessage to Parent Next.js Container
+      if (window.parent) {
+        window.parent.postMessage({
+          type: 'GAME_OVER',
+          gameId: 'kapal-feri',
+          score: score
+        }, '*');
+      }
+    }
+
+    startBtn.addEventListener('click', initGame);
+    restartBtn.addEventListener('click', initGame);
+
+    function loop() {
+      ctx.clearRect(0, 0, width, height);
+
+      // Deep Ocean Blue
+      const seaGrad = ctx.createLinearGradient(0, 0, 0, height);
+      seaGrad.addColorStop(0, '#0369a1');
+      seaGrad.addColorStop(1, '#075985');
+      ctx.fillStyle = seaGrad;
+      ctx.fillRect(0, 0, width, height);
+
+      // Draw Waves
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 2;
+      waves.forEach(w => {
+        w.x += 0.5;
+        if (w.x > width) w.x = -w.w;
+        ctx.beginPath();
+        ctx.arc(w.x, w.y, w.w, 0, Math.PI);
+        ctx.stroke();
+      });
+
+      // Destination Pier (Dermaga)
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(targetPier.x, targetPier.y, targetPier.w, targetPier.h);
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillText('⚓ DERMAGA BAKAUHENI', targetPier.x + 14, targetPier.y + 22);
+
+      // Rocks (Karang Laut)
+      rocks.forEach(r => {
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#334155';
+        ctx.beginPath();
+        ctx.arc(r.x - 3, r.y - 3, r.r * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Controls & Movement
+      if (isPlaying) {
+        if (keys['w'] || keys['arrowup'] || touchGas) {
+          ship.speed = Math.min(ship.speed + ship.accel, ship.maxSpeed);
+        } else {
+          ship.speed = Math.max(ship.speed - 0.05, 0);
+        }
+
+        if (keys['a'] || keys['arrowleft'] || touchLeft) {
+          ship.angle -= ship.turnSpeed * (ship.speed > 0.5 ? 1 : 0.4);
+        }
+        if (keys['d'] || keys['arrowright'] || touchRight) {
+          ship.angle += ship.turnSpeed * (ship.speed > 0.5 ? 1 : 0.4);
+        }
+
+        ship.x += Math.cos(ship.angle) * ship.speed;
+        ship.y += Math.sin(ship.angle) * ship.speed;
+
+        // Boundaries
+        ship.x = Math.max(25, Math.min(width - 25, ship.x));
+        ship.y = Math.max(25, Math.min(height - 25, ship.y));
+
+        speedTxt.innerText = (ship.speed * 4).toFixed(1);
+        const dist = Math.hypot(ship.x - (targetPier.x + targetPier.w / 2), ship.y - targetPier.y);
+        const percent = Math.max(0, Math.min(100, Math.floor((dist / (height - 150)) * 100)));
+        distTxt.innerText = percent + '%';
+
+        // Collision Rocks
+        rocks.forEach(r => {
+          if (Math.hypot(ship.x - r.x, ship.y - r.y) < r.r + 14) {
+            finish(false);
+          }
+        });
+
+        // Docking at Pier
+        if (
+          ship.x > targetPier.x &&
+          ship.x < targetPier.x + targetPier.w &&
+          ship.y > targetPier.y &&
+          ship.y < targetPier.y + targetPier.h + 20
+        ) {
+          if (ship.speed <= 2.5) {
+            finish(true);
+          } else {
+            finish(false); // Terlalu cepat menabrak dermaga
+          }
+        }
+      }
+
+      // Draw Ship
+      ctx.save();
+      ctx.translate(ship.x, ship.y);
+      ctx.rotate(ship.angle + Math.PI / 2);
+
+      // Ship Wake (buih air)
+      if (ship.speed > 0.5) {
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.beginPath();
+        ctx.moveTo(-10, 22);
+        ctx.lineTo(0, 36);
+        ctx.lineTo(10, 22);
+        ctx.fill();
+      }
+
+      // Ship Body (Feri putih/merah Travelista)
+      ctx.fillStyle = '#f8fafc';
+      ctx.beginPath();
+      ctx.roundRect(-14, -26, 28, 52, [8]);
+      ctx.fill();
+
+      // Deck Cabin
+      ctx.fillStyle = '#e53935';
+      ctx.fillRect(-10, -10, 20, 20);
+
+      // Bridge Roof
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(-7, -18, 14, 6);
+
+      ctx.restore();
+
+      requestAnimationFrame(loop);
+    }
+    loop();
+  </script>
+</body>
+</html>
+
