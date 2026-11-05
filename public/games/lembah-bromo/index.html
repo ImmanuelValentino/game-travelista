@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Lembah Bromo: Hang Glider - Travelista Games</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    canvas { width: 100%; height: 100%; display: block; }
+    #ui { position: absolute; inset: 0; pointer-events: none; }
+    .hud { position: absolute; top: 15px; left: 15px; display: flex; gap: 10px; pointer-events: auto; }
+    .badge { background: rgba(15, 23, 42, 0.85); color: #fff; padding: 6px 14px; border-radius: 9999px; font-weight: 800; font-size: 13px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+    .badge span { color: #f59e0b; }
+    .dive-indicator { position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 13px; font-weight: 800; background: rgba(15, 23, 42, 0.7); padding: 8px 18px; border-radius: 9999px; border: 1px solid rgba(255,255,255,0.2); }
+    .modal { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto; color: #fff; text-align: center; padding: 20px; }
+    .btn { background: #e11d48; color: #fff; border: none; padding: 12px 28px; border-radius: 12px; font-weight: 800; font-size: 15px; cursor: pointer; transition: all 0.2s; margin-top: 16px; box-shadow: 0 8px 20px rgba(225, 29, 72, 0.4); }
+    .btn:hover { background: #be123c; transform: translateY(-2px); }
+    .title { font-size: 26px; font-weight: 900; margin-bottom: 6px; }
+    .subtitle { font-size: 13px; color: #94a3b8; max-width: 320px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="ui">
+    <div class="hud">
+      <div class="badge">Jarak Jelajah: <span id="dist-val">0</span> m</div>
+      <div class="badge">Skor: <span id="score-val">0</span> pts</div>
+    </div>
+    <div class="dive-indicator" id="dive-text">TAHAN SPASI / LAYAR UNTUK MENUKIK 👇</div>
+
+    <!-- Start Modal -->
+    <div class="modal" id="start-modal">
+      <div style="font-size: 48px; margin-bottom: 8px;">🪂🌋</div>
+      <h1 class="title">Lembah Bromo: Hang Glider</h1>
+      <p class="subtitle">Kemudikan paralayang melintasi kontur perbukitan pasir Bromo! Tukik tajam menuruni bukit untuk momentum terbang melayang di udara!</p>
+      <div style="margin-top: 14px; font-size: 11px; color: #cbd5e1; background: rgba(255,255,255,0.08); padding: 6px 14px; border-radius: 8px;">
+        <b>TAHAN SPASI / TAP LAYAR</b> saat menuruni bukit • <b>LEPAS</b> di puncak bukit
+      </div>
+      <button class="btn" id="start-btn">Terbang Mengudara</button>
+    </div>
+
+    <!-- Over Modal -->
+    <div class="modal" id="over-modal" style="display: none;">
+      <div style="font-size: 48px; margin-bottom: 8px;">💨</div>
+      <h2 class="title" style="color: #ef4444;">Momentum Terbang Habis!</h2>
+      <p class="subtitle">Paralayang terhempas pelan di hamparan pasir berbisik Bromo.</p>
+      <div style="font-size: 24px; font-weight: 900; color: #f59e0b; margin-top: 10px;" id="final-score">0 pts</div>
+      <button class="btn" id="restart-btn">Terbangkan Kembali</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const distVal = document.getElementById('dist-val');
+    const scoreVal = document.getElementById('score-val');
+    const startModal = document.getElementById('start-modal');
+    const overModal = document.getElementById('over-modal');
+    const finalScore = document.getElementById('final-score');
+    const startBtn = document.getElementById('start-btn');
+    const restartBtn = document.getElementById('restart-btn');
+
+    let width, height;
+    function resize() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Audio SFX
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let actx = null;
+    function initAudio() {
+      if (!actx) actx = new AudioCtx();
+      if (actx.state === 'suspended') actx.resume();
+    }
+    function playUpdraft() {
+      initAudio();
+      try {
+        const osc = actx.createOscillator(), gain = actx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(320, actx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(750, actx.currentTime + 0.25);
+        gain.gain.setValueAtTime(0.25, actx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, actx.currentTime + 0.25);
+        osc.connect(gain); gain.connect(actx.destination);
+        osc.start(); osc.stop(actx.currentTime + 0.25);
+      } catch(e){}
+    }
+
+    let isPlaying = false;
+    let isDiving = false;
+    let glider = { x: 100, y: 150, vx: 5, vy: 0, angle: 0 };
+    let cameraX = 0;
+    let score = 0;
+    let coins = [];
+
+    // Terrain Function: Sinusoidal hills
+    function getGroundY(worldX) {
+      return height * 0.7 + Math.sin(worldX * 0.004) * 80 + Math.cos(worldX * 0.002) * 50;
+    }
+
+    function init() {
+      startModal.style.display = 'none';
+      overModal.style.display = 'none';
+      score = 0;
+      glider.x = 100;
+      glider.y = getGroundY(100) - 100;
+      glider.vx = 6;
+      glider.vy = 0;
+      glider.angle = 0;
+      cameraX = 0;
+
+      coins = [];
+      for (let i = 1; i < 40; i++) {
+        const cx = i * 220;
+        coins.push({ x: cx, y: getGroundY(cx) - 110, collected: false });
+      }
+
+      isPlaying = true;
+    }
+
+    function gameOver() {
+      isPlaying = false;
+      finalScore.innerText = Math.floor(score).toLocaleString('id-ID') + ' pts';
+      overModal.style.display = 'flex';
+
+      if (window.parent) {
+        window.parent.postMessage({
+          type: 'GAME_OVER',
+          gameId: 'lembah-bromo',
+          score: Math.floor(score)
+        }, '*');
+      }
+    }
+
+    window.addEventListener('keydown', e => { if (e.code === 'Space') isDiving = true; });
+    window.addEventListener('keyup', e => { if (e.code === 'Space') isDiving = false; });
+    canvas.addEventListener('pointerdown', () => isDiving = true);
+    window.addEventListener('pointerup', () => isDiving = false);
+
+    startBtn.addEventListener('click', () => { initAudio(); init(); });
+    restartBtn.addEventListener('click', () => { initAudio(); init(); });
+
+    function loop() {
+      ctx.clearRect(0, 0, width, height);
+
+      // Sunrise Sky over Bromo
+      const sky = ctx.createLinearGradient(0, 0, 0, height);
+      sky.addColorStop(0, '#0f172a');
+      sky.addColorStop(0.5, '#475569');
+      sky.addColorStop(1, '#f97316');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, width, height);
+
+      // Bromo Caldera Volcano in distant background
+      ctx.fillStyle = '#1e293b';
+      ctx.beginPath();
+      ctx.moveTo(width * 0.4, height * 0.65);
+      ctx.lineTo(width * 0.6, height * 0.45);
+      ctx.lineTo(width * 0.68, height * 0.48); // Crater top
+      ctx.lineTo(width * 0.85, height * 0.65);
+      ctx.fill();
+
+      if (isPlaying) {
+        // Physics update
+        if (isDiving) {
+          glider.vy += 0.45; // Dive down
+          glider.vx += 0.05;
+        } else {
+          glider.vy += 0.15; // Gentle gravity
+        }
+
+        glider.x += glider.vx;
+        glider.y += glider.vy;
+        cameraX = glider.x - 140;
+
+        const groundY = getGroundY(glider.x);
+        const slope = (getGroundY(glider.x + 5) - getGroundY(glider.x - 5)) / 10;
+
+        // Collision with ground / Slopes
+        if (glider.y >= groundY - 14) {
+          glider.y = groundY - 14;
+
+          // If diving downhill, gain massive speed!
+          if (slope > 0.1 && isDiving) {
+            glider.vx += 0.25;
+            glider.vy = slope * glider.vx;
+          } else {
+            // Decelerate if hit uphill or flat
+            glider.vx -= 0.18;
+            glider.vy = slope * glider.vx;
+            if (glider.vx < 1.5) {
+              gameOver();
+              return;
+            }
+          }
+        } else {
+          // If launched off uphill peak
+          if (!isDiving && slope < -0.1 && glider.vx > 7) {
+            playUpdraft();
+            glider.vy -= 0.25; // Thermal float
+          }
+        }
+
+        glider.angle = Math.atan2(glider.vy, glider.vx);
+        score += glider.vx * 0.2;
+        distVal.innerText = Math.floor(glider.x);
+        scoreVal.innerText = Math.floor(score).toLocaleString('id-ID');
+
+        // Coins Pickup
+        coins.forEach(c => {
+          if (!c.collected && Math.hypot(glider.x - c.x, glider.y - c.y) < 28) {
+            c.collected = true;
+            score += 500;
+          }
+        });
+      }
+
+      ctx.save();
+      ctx.translate(-cameraX, 0);
+
+      // Draw Sinusoidal Bromo Hills (Terrain)
+      ctx.fillStyle = '#b45309'; // Sand Sea Dunes
+      ctx.beginPath();
+      ctx.moveTo(cameraX - 50, height);
+      for (let x = cameraX - 50; x < cameraX + width + 50; x += 15) {
+        ctx.lineTo(x, getGroundY(x));
+      }
+      ctx.lineTo(cameraX + width + 50, height);
+      ctx.closePath();
+      ctx.fill();
+
+      // Hill grass top edge
+      ctx.strokeStyle = '#15803d'; // Green savanna / Teletubbies
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      for (let x = cameraX - 50; x < cameraX + width + 50; x += 15) {
+        ctx.lineTo(x, getGroundY(x));
+      }
+      ctx.stroke();
+
+      // Draw Coins
+      coins.forEach(c => {
+        if (!c.collected) {
+          ctx.fillStyle = '#fbbf24';
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, 10, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.font = '12px sans-serif';
+          ctx.fillText('⭐', c.x - 6, c.y + 4);
+        }
+      });
+
+      // Draw Hang Glider (Player)
+      ctx.save();
+      ctx.translate(glider.x, glider.y);
+      ctx.rotate(glider.angle);
+
+      // Delta Wing
+      ctx.fillStyle = '#e11d48';
+      ctx.beginPath();
+      ctx.moveTo(18, 0);
+      ctx.lineTo(-18, -12);
+      ctx.lineTo(-10, 0);
+      ctx.lineTo(-18, 12);
+      ctx.closePath();
+      ctx.fill();
+
+      // Pilot Head
+      ctx.fillStyle = '#f8fafc';
+      ctx.beginPath();
+      ctx.arc(0, 4, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+      ctx.restore();
+
+      requestAnimationFrame(loop);
+    }
+    loop();
+  </script>
+</body>
+</html>
+

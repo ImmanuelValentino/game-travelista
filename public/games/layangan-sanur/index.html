@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Layangan Sanur: Wind Battle - Travelista Games</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0284c7; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    canvas { width: 100%; height: 100%; display: block; }
+    #ui { position: absolute; inset: 0; pointer-events: none; }
+    .hud { position: absolute; top: 15px; left: 15px; display: flex; gap: 10px; pointer-events: auto; }
+    .badge { background: rgba(15, 23, 42, 0.85); color: #fff; padding: 6px 14px; border-radius: 9999px; font-weight: 800; font-size: 13px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+    .badge span { color: #f59e0b; }
+    .tension-wrap { position: absolute; top: 15px; right: 15px; width: 130px; height: 26px; background: rgba(15, 23, 42, 0.85); border-radius: 9999px; padding: 3px; border: 1px solid rgba(255,255,255,0.2); }
+    .tension-bar { height: 100%; width: 20%; background: #22c55e; border-radius: 9999px; transition: width 0.1s, background 0.2s; }
+    .modal { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto; color: #fff; text-align: center; padding: 20px; }
+    .btn { background: #e53935; color: #fff; border: none; padding: 12px 28px; border-radius: 12px; font-weight: 800; font-size: 15px; cursor: pointer; transition: all 0.2s; margin-top: 16px; box-shadow: 0 8px 20px rgba(229, 57, 53, 0.4); }
+    .btn:hover { background: #c62828; transform: translateY(-2px); }
+    .title { font-size: 26px; font-weight: 900; margin-bottom: 6px; }
+    .subtitle { font-size: 13px; color: #94a3b8; max-width: 320px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="ui">
+    <div class="hud">
+      <div class="badge">Layangan Diputus: <span id="cut-val">0</span> 🪁</div>
+      <div class="badge">Skor: <span id="score-val">0</span> pts</div>
+    </div>
+    <div class="tension-wrap">
+      <div class="tension-bar" id="tension-bar"></div>
+    </div>
+
+    <!-- Start Modal -->
+    <div class="modal" id="start-modal">
+      <div style="font-size: 48px; margin-bottom: 8px;">🪁🌊</div>
+      <h1 class="title">Layangan Sanur: Wind Battle</h1>
+      <p class="subtitle">Adu ketangkasan tarik-ulur layangan bebean tradisional di langit Pantai Sanur Bali! Potong benang lawan tanpa membuat benang sendiri putus!</p>
+      <div style="margin-top: 14px; font-size: 11px; color: #cbd5e1; background: rgba(255,255,255,0.08); padding: 6px 14px; border-radius: 8px;">
+        <b>TAHAN SPASI / TAP LAYAR</b> untuk Tarik Menukik • <b>LEPAS</b> untuk Ulur
+      </div>
+      <button class="btn" id="start-btn">Naikkan Layangan</button>
+    </div>
+
+    <!-- Over Modal -->
+    <div class="modal" id="over-modal" style="display: none;">
+      <div style="font-size: 48px; margin-bottom: 8px;">✂️</div>
+      <h2 class="title" style="color: #ef4444;">Benang Layangan Putus!</h2>
+      <p class="subtitle" id="over-desc">Tegangan benang terlalu kencang atau dipotong layangan lawan.</p>
+      <div style="font-size: 24px; font-weight: 900; color: #f59e0b; margin-top: 10px;" id="final-score">0 pts</div>
+      <button class="btn" id="restart-btn">Terbangkan Lagi</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const cutVal = document.getElementById('cut-val');
+    const scoreVal = document.getElementById('score-val');
+    const tensionBar = document.getElementById('tension-bar');
+    const startModal = document.getElementById('start-modal');
+    const overModal = document.getElementById('over-modal');
+    const finalScore = document.getElementById('final-score');
+    const startBtn = document.getElementById('start-btn');
+    const restartBtn = document.getElementById('restart-btn');
+
+    let width, height;
+    function resize() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Web Audio Synthesizer
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let actx = null;
+    function initAudio() {
+      if (!actx) actx = new AudioCtx();
+      if (actx.state === 'suspended') actx.resume();
+    }
+    function playSnap() {
+      initAudio();
+      try {
+        const osc = actx.createOscillator(), gain = actx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(1200, actx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(150, actx.currentTime + 0.08);
+        gain.gain.setValueAtTime(0.4, actx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, actx.currentTime + 0.08);
+        osc.connect(gain); gain.connect(actx.destination);
+        osc.start(); osc.stop(actx.currentTime + 0.08);
+      } catch(e){}
+    }
+
+    let isPlaying = false;
+    let tension = 20; // 0 - 100
+    let isPulling = false;
+    let score = 0;
+    let cuts = 0;
+
+    let playerKite = { x: 120, y: 150, targetY: 150, tail: [] };
+    let enemyKites = [];
+    let clouds = [];
+
+    for (let i = 0; i < 5; i++) {
+      clouds.push({ x: Math.random() * width, y: 30 + Math.random() * 140, w: 60 + Math.random() * 60 });
+    }
+
+    function init() {
+      startModal.style.display = 'none';
+      overModal.style.display = 'none';
+      score = 0;
+      cuts = 0;
+      tension = 20;
+      playerKite.x = width * 0.25;
+      playerKite.y = height * 0.4;
+      playerKite.tail = [];
+      for (let i = 0; i < 15; i++) playerKite.tail.push({ x: playerKite.x, y: playerKite.y + i * 8 });
+      enemyKites = [];
+      isPlaying = true;
+    }
+
+    function gameOver(desc) {
+      isPlaying = false;
+      playSnap();
+      document.getElementById('over-desc').innerText = desc;
+      finalScore.innerText = Math.floor(score).toLocaleString('id-ID') + ' pts';
+      overModal.style.display = 'flex';
+
+      if (window.parent) {
+        window.parent.postMessage({
+          type: 'GAME_OVER',
+          gameId: 'layangan-sanur',
+          score: Math.floor(score)
+        }, '*');
+      }
+    }
+
+    window.addEventListener('keydown', e => { if (e.code === 'Space') isPulling = true; });
+    window.addEventListener('keyup', e => { if (e.code === 'Space') isPulling = false; });
+    window.addEventListener('pointerdown', () => isPulling = true);
+    window.addEventListener('pointerup', () => isPulling = false);
+
+    startBtn.addEventListener('click', () => { initAudio(); init(); });
+    restartBtn.addEventListener('click', () => { initAudio(); init(); });
+
+    let spawnTimer = 0;
+
+    function loop() {
+      ctx.clearRect(0, 0, width, height);
+
+      // Sky Gradient
+      const sky = ctx.createLinearGradient(0, 0, 0, height);
+      sky.addColorStop(0, '#0284c7');
+      sky.addColorStop(0.7, '#38bdf8');
+      sky.addColorStop(1, '#059669'); // Sanur Coastline
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, width, height);
+
+      // Clouds
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      clouds.forEach(c => {
+        c.x -= 0.5;
+        if (c.x + c.w < 0) c.x = width + 50;
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, c.w * 0.4, 0, Math.PI * 2);
+        ctx.arc(c.x + c.w * 0.3, c.y - 10, c.w * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      if (isPlaying) {
+        score += 0.5;
+        scoreVal.innerText = Math.floor(score).toLocaleString('id-ID');
+
+        // Tension mechanics
+        if (isPulling) {
+          tension += 0.8;
+          playerKite.y = Math.max(60, playerKite.y - 4); // Menukik ke atas tajam
+        } else {
+          tension = Math.max(10, tension - 0.6);
+          playerKite.y = Math.min(height * 0.7, playerKite.y + 2.5); // Mengulur turun
+        }
+
+        // Tension bar update
+        tensionBar.style.width = tension + '%';
+        if (tension > 80) tensionBar.style.background = '#ef4444';
+        else if (tension > 50) tensionBar.style.background = '#f59e0b';
+        else tensionBar.style.background = '#22c55e';
+
+        if (tension >= 100) {
+          gameOver("Tegangan benang terlalu panas dan putus!");
+          return;
+        }
+
+        // Spawning Enemies
+        spawnTimer++;
+        if (spawnTimer > 120) {
+          spawnTimer = 0;
+          enemyKites.push({
+            x: width + 50,
+            y: 80 + Math.random() * (height * 0.5),
+            w: 36,
+            h: 46,
+            speed: 2 + Math.random() * 2,
+            tail: []
+          });
+        }
+      }
+
+      // Draw Player String (From Bottom Left to Kite)
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(30, height - 20);
+      ctx.lineTo(playerKite.x, playerKite.y);
+      ctx.stroke();
+
+      // Draw Player Tail (Sinusoidal Physics)
+      let prevX = playerKite.x, prevY = playerKite.y + 24;
+      ctx.strokeStyle = '#dc2626';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(prevX, prevY);
+      playerKite.tail.forEach((pt, i) => {
+        pt.x = prevX - 6 + Math.sin(Date.now() * 0.01 + i) * 8;
+        pt.y = prevY + 8;
+        ctx.lineTo(pt.x, pt.y);
+        prevX = pt.x; prevY = pt.y;
+      });
+      ctx.stroke();
+
+      // Draw Player Kite (Traditional Bebean Shape)
+      ctx.save();
+      ctx.translate(playerKite.x, playerKite.y);
+      ctx.fillStyle = '#dc2626';
+      ctx.beginPath();
+      ctx.moveTo(0, -24);
+      ctx.lineTo(22, 4);
+      ctx.lineTo(0, 24);
+      ctx.lineTo(-22, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#f8fafc';
+      ctx.beginPath();
+      ctx.arc(0, 0, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Draw Enemy Kites
+      for (let i = enemyKites.length - 1; i >= 0; i--) {
+        const ek = enemyKites[i];
+        if (isPlaying) ek.x -= ek.speed;
+
+        // Enemy String
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(width - 40, height - 20);
+        ctx.lineTo(ek.x, ek.y);
+        ctx.stroke();
+
+        // Enemy Kite Body
+        ctx.fillStyle = '#1e1b4b';
+        ctx.beginPath();
+        ctx.moveTo(ek.x, ek.y - 20);
+        ctx.lineTo(ek.x + 18, ek.y + 2);
+        ctx.lineTo(ek.x, ek.y + 20);
+        ctx.lineTo(ek.x - 18, ek.y + 2);
+        ctx.closePath();
+        ctx.fill();
+
+        // Cutting Collision
+        if (isPlaying && Math.hypot(playerKite.x - ek.x, playerKite.y - ek.y) < 32) {
+          if (isPulling && tension < 85) {
+            // Cut enemy kite!
+            cuts++;
+            score += 1200;
+            cutVal.innerText = cuts;
+            playSnap();
+            enemyKites.splice(i, 1);
+          } else {
+            gameOver("Layanganmu kalah tajam saat bergesekan!");
+            return;
+          }
+        }
+
+        if (ek.x < -60) enemyKites.splice(i, 1);
+      }
+
+      requestAnimationFrame(loop);
+    }
+    loop();
+  </script>
+</body>
+</html>
+

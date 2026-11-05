@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Kopi Klotok: Barista Rhythm - Travelista Games</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #1c1917; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; }
+    canvas { width: 100%; height: 100%; display: block; }
+    #ui { position: absolute; inset: 0; pointer-events: none; }
+    .hud { position: absolute; top: 15px; left: 15px; display: flex; gap: 10px; pointer-events: auto; }
+    .badge { background: rgba(28, 25, 23, 0.9); color: #fff; padding: 6px 14px; border-radius: 9999px; font-weight: 800; font-size: 13px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+    .badge span { color: #f59e0b; }
+    .rating-banner { position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%) scale(0.6); font-size: 32px; font-weight: 900; opacity: 0; transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); pointer-events: none; }
+    .rating-banner.show { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+    .tap-btn { position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%); width: 140px; height: 54px; background: #b45309; border: 3px solid #fef3c7; border-radius: 16px; color: #fff; font-size: 16px; font-weight: 900; display: flex; align-items: center; justify-content: center; cursor: pointer; pointer-events: auto; box-shadow: 0 8px 24px rgba(180, 83, 9, 0.5); }
+    .tap-btn:active { transform: translateX(-50%) scale(0.95); background: #92400e; }
+    .modal { position: absolute; inset: 0; background: rgba(28, 25, 23, 0.92); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto; color: #fff; text-align: center; padding: 20px; }
+    .btn { background: #b45309; color: #fff; border: none; padding: 12px 28px; border-radius: 12px; font-weight: 800; font-size: 15px; cursor: pointer; transition: all 0.2s; margin-top: 16px; box-shadow: 0 8px 20px rgba(180, 83, 9, 0.4); }
+    .btn:hover { background: #92400e; transform: translateY(-2px); }
+    .title { font-size: 26px; font-weight: 900; margin-bottom: 6px; }
+    .subtitle { font-size: 13px; color: #cbd5e1; max-width: 320px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="ui">
+    <div class="hud">
+      <div class="badge">Cangkir Terisi: <span id="cups-val">0</span> ☕</div>
+      <div class="badge">Skor Barista: <span id="score-val">0</span> pts</div>
+    </div>
+    <div class="rating-banner" id="rating-banner">SEMPURNA! ✨</div>
+    <div class="tap-btn" id="tap-btn">SEDOH! ☕</div>
+
+    <!-- Start Modal -->
+    <div class="modal" id="start-modal">
+      <div style="font-size: 48px; margin-bottom: 8px;">☕🔥</div>
+      <h1 class="title">Kopi Klotok: Barista Rhythm</h1>
+      <p class="subtitle">Ketuk seduhan kopi tepat saat tetesan air mendidih & biji kopi panggang menyentuh bibir cangkir tanah liat!</p>
+      <div style="margin-top: 14px; font-size: 11px; color: #cbd5e1; background: rgba(255,255,255,0.08); padding: 6px 14px; border-radius: 8px;">
+        Tekan <b>SPASI</b> atau <b>TOMBOL SEDOH</b> saat tetesan berada di garis merah
+      </div>
+      <button class="btn" id="start-btn">Buka Warung Kopi</button>
+    </div>
+
+    <!-- Over Modal -->
+    <div class="modal" id="over-modal" style="display: none;">
+      <div style="font-size: 48px; margin-bottom: 8px;">♨️</div>
+      <h2 class="title" style="color: #ef4444;">Kopi Tumpah & Gosong!</h2>
+      <p class="subtitle">Ketukan meleset terlalu banyak dari ritme seduhan.</p>
+      <div style="font-size: 24px; font-weight: 900; color: #f59e0b; margin-top: 10px;" id="final-score">0 pts</div>
+      <button class="btn" id="restart-btn">Seduh Kopi Baru</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const cupsVal = document.getElementById('cups-val');
+    const scoreVal = document.getElementById('score-val');
+    const ratingBanner = document.getElementById('rating-banner');
+    const tapBtn = document.getElementById('tap-btn');
+    const startModal = document.getElementById('start-modal');
+    const overModal = document.getElementById('over-modal');
+    const finalScore = document.getElementById('final-score');
+    const startBtn = document.getElementById('start-btn');
+    const restartBtn = document.getElementById('restart-btn');
+
+    let width, height;
+    function resize() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Web Audio Synthesizer
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let actx = null;
+    function initAudio() {
+      if (!actx) actx = new AudioCtx();
+      if (actx.state === 'suspended') actx.resume();
+    }
+    function playDropSound(freq) {
+      initAudio();
+      try {
+        const osc = actx.createOscillator(), gain = actx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, actx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(freq * 1.8, actx.currentTime + 0.06);
+        gain.gain.setValueAtTime(0.3, actx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, actx.currentTime + 0.06);
+        osc.connect(gain); gain.connect(actx.destination);
+        osc.start(); osc.stop(actx.currentTime + 0.06);
+      } catch(e){}
+    }
+
+    let isPlaying = false;
+    let score = 0;
+    let cups = 0;
+    let misses = 0;
+    let drops = [];
+    let steam = [];
+    const HIT_Y = () => height - 160;
+
+    function init() {
+      startModal.style.display = 'none';
+      overModal.style.display = 'none';
+      score = 0;
+      cups = 0;
+      misses = 0;
+      drops = [];
+      steam = [];
+      isPlaying = true;
+    }
+
+    function hit() {
+      if (!isPlaying) return;
+      initAudio();
+
+      const hitY = HIT_Y();
+      let hitIdx = -1;
+      let minDiff = 999;
+
+      drops.forEach((d, idx) => {
+        const diff = Math.abs(d.y - hitY);
+        if (diff < minDiff) {
+          minDiff = diff;
+          hitIdx = idx;
+        }
+      });
+
+      if (hitIdx !== -1 && minDiff < 45) {
+        // Successful hit
+        drops.splice(hitIdx, 1);
+        cups++;
+        cupsVal.innerText = cups;
+
+        if (minDiff < 15) {
+          score += 300;
+          showRating("SEMPURNA! ✨", "#4ade80");
+          playDropSound(600);
+        } else {
+          score += 150;
+          showRating("PAS! ☕", "#facc15");
+          playDropSound(450);
+        }
+        scoreVal.innerText = score.toLocaleString('id-ID');
+
+        // Add steam particles
+        for (let i = 0; i < 4; i++) {
+          steam.push({ x: width / 2 + (Math.random() - 0.5) * 40, y: hitY, vy: -1.5, alpha: 0.8 });
+        }
+      } else {
+        // Miss / Tap Kosong
+        misses++;
+        showRating("LEWAT!", "#ef4444");
+        if (misses >= 5) gameOver();
+      }
+    }
+
+    function showRating(text, color) {
+      ratingBanner.innerText = text;
+      ratingBanner.style.color = color;
+      ratingBanner.classList.add('show');
+      setTimeout(() => ratingBanner.classList.remove('show'), 350);
+    }
+
+    function gameOver() {
+      isPlaying = false;
+      finalScore.innerText = score.toLocaleString('id-ID') + ' pts';
+      overModal.style.display = 'flex';
+
+      if (window.parent) {
+        window.parent.postMessage({
+          type: 'GAME_OVER',
+          gameId: 'kopi-klotok',
+          score: score
+        }, '*');
+      }
+    }
+
+    window.addEventListener('keydown', e => { if (e.code === 'Space') hit(); });
+    tapBtn.addEventListener('pointerdown', hit);
+    startBtn.addEventListener('click', () => { initAudio(); init(); });
+    restartBtn.addEventListener('click', () => { initAudio(); init(); });
+
+    let spawnTimer = 0;
+
+    function loop() {
+      ctx.clearRect(0, 0, width, height);
+
+      // Warung Ambient Background
+      const bg = ctx.createLinearGradient(0, 0, 0, height);
+      bg.addColorStop(0, '#1c1917');
+      bg.addColorStop(1, '#292524');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, width, height);
+
+      const hitY = HIT_Y();
+
+      // Wooden Table
+      ctx.fillStyle = '#78350f';
+      ctx.fillRect(0, hitY + 20, width, height - (hitY + 20));
+      ctx.fillStyle = '#451a03';
+      ctx.fillRect(0, hitY + 20, width, 6);
+
+      // Hit Line Marker
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 8]);
+      ctx.beginPath();
+      ctx.moveTo(width / 2 - 80, hitY);
+      ctx.lineTo(width / 2 + 80, hitY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Clay Coffee Cup (Cangkir Tanah Liat)
+      const cupX = width / 2;
+      ctx.fillStyle = '#92400e';
+      ctx.beginPath();
+      ctx.roundRect(cupX - 44, hitY, 88, 56, [0, 0, 20, 20]);
+      ctx.fill();
+      // Cup handle
+      ctx.strokeStyle = '#92400e';
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.arc(cupX + 44, hitY + 26, 14, -Math.PI / 2, Math.PI / 2);
+      ctx.stroke();
+      // Coffee surface inside cup
+      ctx.fillStyle = '#1c1917';
+      ctx.beginPath();
+      ctx.ellipse(cupX, hitY + 4, 40, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Steam particles
+      for (let i = steam.length - 1; i >= 0; i--) {
+        const s = steam[i];
+        s.y += s.vy;
+        s.alpha -= 0.015;
+        ctx.fillStyle = `rgba(255,255,255,${s.alpha})`;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 8, 0, Math.PI * 2);
+        ctx.fill();
+        if (s.alpha <= 0) steam.splice(i, 1);
+      }
+
+      if (isPlaying) {
+        spawnTimer++;
+        if (spawnTimer > 45) {
+          spawnTimer = 0;
+          drops.push({
+            x: cupX,
+            y: 40,
+            vy: 4.5 + Math.min(cups * 0.1, 4),
+            isBean: Math.random() > 0.5
+          });
+        }
+
+        // Move Drops
+        for (let i = drops.length - 1; i >= 0; i--) {
+          const d = drops[i];
+          d.y += d.vy;
+
+          // Draw Drops
+          if (d.isBean) {
+            // Roasted Bean
+            ctx.fillStyle = '#451a03';
+            ctx.beginPath();
+            ctx.ellipse(d.x, d.y, 8, 12, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#292524';
+            ctx.fillRect(d.x - 1, d.y - 8, 2, 16);
+          } else {
+            // Boiling Water Droplet
+            ctx.fillStyle = '#38bdf8';
+            ctx.beginPath();
+            ctx.arc(d.x, d.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Missed Drop
+          if (d.y > hitY + 50) {
+            drops.splice(i, 1);
+            misses++;
+            showRating("TERLEWAT!", "#ef4444");
+            if (misses >= 5) gameOver();
+          }
+        }
+      }
+
+      requestAnimationFrame(loop);
+    }
+    loop();
+  </script>
+</body>
+</html>
+

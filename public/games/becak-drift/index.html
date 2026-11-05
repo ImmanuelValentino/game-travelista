@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Becak Drift: Malioboro Rush - Travelista Games</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    canvas { width: 100%; height: 100%; display: block; }
+    #ui { position: absolute; inset: 0; pointer-events: none; }
+    .hud { position: absolute; top: 15px; left: 15px; display: flex; gap: 10px; pointer-events: auto; }
+    .badge { background: rgba(15, 23, 42, 0.85); color: #fff; padding: 6px 14px; border-radius: 9999px; font-weight: 800; font-size: 13px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+    .badge span { color: #f59e0b; }
+    .drift-alert { position: absolute; top: 70px; left: 50%; transform: translateX(-50%); color: #38bdf8; font-weight: 900; font-size: 20px; text-shadow: 0 0 10px rgba(56, 189, 248, 0.6); opacity: 0; transition: opacity 0.2s; }
+    .modal { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto; color: #fff; text-align: center; padding: 20px; }
+    .btn { background: #e53935; color: #fff; border: none; padding: 12px 28px; border-radius: 12px; font-weight: 800; font-size: 15px; cursor: pointer; transition: all 0.2s; margin-top: 16px; box-shadow: 0 8px 20px rgba(229, 57, 53, 0.4); }
+    .btn:hover { background: #c62828; transform: translateY(-2px); }
+    .title { font-size: 26px; font-weight: 900; margin-bottom: 6px; }
+    .subtitle { font-size: 13px; color: #94a3b8; max-width: 320px; line-height: 1.4; }
+    .touch-hints { position: absolute; bottom: 20px; inset-x: 20px; display: flex; justify-content: space-between; pointer-events: none; opacity: 0.6; font-size: 12px; font-weight: bold; color: #fff; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="ui">
+    <div class="hud">
+      <div class="badge">Skor: <span id="score-val">0</span> pts</div>
+      <div class="badge">Kecepatan: <span id="speed-val">0</span> km/h</div>
+    </div>
+    <div class="drift-alert" id="drift-alert">DRIFT BONUS! 🔥</div>
+
+    <div class="touch-hints">
+      <span>◀ TAP KIRI</span>
+      <span>TAP KANAN ▶</span>
+    </div>
+
+    <!-- Start Modal -->
+    <div class="modal" id="start-modal">
+      <div style="font-size: 48px; margin-bottom: 8px;">🛺💨</div>
+      <h1 class="title">Becak Drift: Malioboro Rush</h1>
+      <p class="subtitle">Luncurkan becak kayuh melintasi lorong Malioboro Jogja! Hindari andong kuda & tiang lampu, kumpulkan turis!</p>
+      <div style="margin-top: 14px; font-size: 11px; color: #cbd5e1; background: rgba(255,255,255,0.08); padding: 6px 14px; border-radius: 8px;">
+        Gunakan <b>A / D</b> atau <b>PANAH KIRI/KANAN</b> / Tap sisi layar
+      </div>
+      <button class="btn" id="start-btn">Ngebut Sekarang</button>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div class="modal" id="over-modal" style="display: none;">
+      <div style="font-size: 48px; margin-bottom: 8px;">💥</div>
+      <h2 class="title" style="color: #ef4444;">Becak Terguling!</h2>
+      <p class="subtitle">Kamu menabrak rintangan di jalan Malioboro.</p>
+      <div style="font-size: 24px; font-weight: 900; color: #f59e0b; margin-top: 10px;" id="final-score">0 pts</div>
+      <button class="btn" id="restart-btn">Tarik Becak Lagi</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const scoreVal = document.getElementById('score-val');
+    const speedVal = document.getElementById('speed-val');
+    const driftAlert = document.getElementById('drift-alert');
+    const startModal = document.getElementById('start-modal');
+    const overModal = document.getElementById('over-modal');
+    const finalScore = document.getElementById('final-score');
+    const startBtn = document.getElementById('start-btn');
+    const restartBtn = document.getElementById('restart-btn');
+
+    let width, height;
+    function resize() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Procedural Audio
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let actx = null;
+    function initAudio() {
+      if (!actx) actx = new AudioCtx();
+      if (actx.state === 'suspended') actx.resume();
+    }
+    function playBeep(freq, type, dur, vol=0.15) {
+      initAudio();
+      try {
+        const osc = actx.createOscillator(), gain = actx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, actx.currentTime);
+        gain.gain.setValueAtTime(vol, actx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, actx.currentTime + dur);
+        osc.connect(gain); gain.connect(actx.destination);
+        osc.start(); osc.stop(actx.currentTime + dur);
+      } catch(e){}
+    }
+
+    // State
+    let isPlaying = false;
+    let score = 0;
+    let speed = 7;
+    let roadOffset = 0;
+    let steer = 0; // -1 left, 1 right
+    let becakX = width / 2;
+    let becakAngle = 0;
+    let isDrifting = false;
+    let driftTimer = 0;
+
+    let obstacles = [];
+    let passengers = [];
+    let skidMarks = [];
+
+    // Inputs
+    let keys = {};
+    window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+    window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+    let touchX = null;
+    canvas.addEventListener('pointerdown', e => {
+      touchX = e.clientX;
+      initAudio();
+    });
+    canvas.addEventListener('pointermove', e => {
+      if (touchX !== null) touchX = e.clientX;
+    });
+    window.addEventListener('pointerup', () => touchX = null);
+
+    function start() {
+      startModal.style.display = 'none';
+      overModal.style.display = 'none';
+      score = 0;
+      speed = 7;
+      roadOffset = 0;
+      becakX = width / 2;
+      becakAngle = 0;
+      obstacles = [];
+      passengers = [];
+      skidMarks = [];
+      isPlaying = true;
+    }
+
+    function gameOver() {
+      isPlaying = false;
+      playBeep(90, 'sawtooth', 0.4, 0.3);
+      finalScore.innerText = Math.floor(score).toLocaleString('id-ID') + ' pts';
+      overModal.style.display = 'flex';
+
+      if (window.parent) {
+        window.parent.postMessage({
+          type: 'GAME_OVER',
+          gameId: 'becak-drift',
+          score: Math.floor(score)
+        }, '*');
+      }
+    }
+
+    startBtn.addEventListener('click', start);
+    restartBtn.addEventListener('click', start);
+
+    let spawnTimer = 0;
+
+    function loop() {
+      ctx.clearRect(0, 0, width, height);
+
+      // Road Area
+      const roadW = Math.min(width * 0.7, 440);
+      const roadL = (width - roadW) / 2;
+      const roadR = roadL + roadW;
+
+      // Sidewalks
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(0, 0, roadL, height);
+      ctx.fillRect(roadR, 0, width - roadR, height);
+
+      // Malioboro Asphalt
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(roadL, 0, roadW, height);
+
+      // Sidewalk Kerb / Paving pattern
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillRect(roadL - 8, 0, 8, height);
+      ctx.fillRect(roadR, 0, 8, height);
+
+      // Road Markings
+      roadOffset = (roadOffset + speed) % 40;
+      ctx.strokeStyle = '#f8fafc';
+      ctx.lineWidth = 4;
+      ctx.setLineDash([20, 20]);
+      ctx.beginPath();
+      ctx.moveTo(width / 2, -40 + roadOffset);
+      ctx.lineTo(width / 2, height + 40);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Draw Skid Marks
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      skidMarks.forEach((m, idx) => {
+        m.y += speed;
+        ctx.fillRect(m.x - 3, m.y, 6, 8);
+        if (m.y > height) skidMarks.splice(idx, 1);
+      });
+
+      if (isPlaying) {
+        score += speed * 0.15;
+        speed = Math.min(speed + 0.001, 14);
+
+        // Steering input
+        steer = 0;
+        if (keys['a'] || keys['arrowleft'] || (touchX !== null && touchX < width / 2)) steer -= 1;
+        if (keys['d'] || keys['arrowright'] || (touchX !== null && touchX >= width / 2)) steer += 1;
+
+        if (steer !== 0) {
+          becakAngle += steer * 0.08;
+          becakX += steer * (speed * 0.85);
+
+          // Drift threshold
+          if (Math.abs(becakAngle) > 0.35) {
+            isDrifting = true;
+            driftTimer++;
+            score += 1;
+            driftAlert.style.opacity = '1';
+            skidMarks.push({ x: becakX - 12, y: height - 110 });
+            skidMarks.push({ x: becakX + 12, y: height - 110 });
+            if (driftTimer % 12 === 0) playBeep(900, 'square', 0.04, 0.05);
+          } else {
+            isDrifting = false;
+            driftAlert.style.opacity = '0';
+          }
+        } else {
+          becakAngle *= 0.85;
+          isDrifting = false;
+          driftAlert.style.opacity = '0';
+        }
+
+        // Clamp angle & bounds
+        becakAngle = Math.max(-0.6, Math.min(0.6, becakAngle));
+        becakX = Math.max(roadL + 24, Math.min(roadR - 24, becakX));
+
+        scoreVal.innerText = Math.floor(score).toLocaleString('id-ID');
+        speedVal.innerText = Math.floor(speed * 4);
+
+        // Spawning
+        spawnTimer++;
+        if (spawnTimer > 60) {
+          spawnTimer = 0;
+          if (Math.random() < 0.75) {
+            // Spawn Obstacle (Andong / Tiang)
+            const isAndong = Math.random() > 0.4;
+            obstacles.push({
+              x: roadL + 30 + Math.random() * (roadW - 60),
+              y: -80,
+              w: isAndong ? 38 : 22,
+              h: isAndong ? 48 : 22,
+              type: isAndong ? 'andong' : 'tiang'
+            });
+          } else {
+            // Spawn Tourist Passenger (Pickup Bonus)
+            passengers.push({
+              x: roadL + 30 + Math.random() * (roadW - 60),
+              y: -50,
+              r: 16
+            });
+          }
+        }
+      }
+
+      // Draw Obstacles
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const obs = obstacles[i];
+        if (isPlaying) obs.y += speed * 0.85;
+
+        if (obs.type === 'andong') {
+          ctx.fillStyle = '#78350f';
+          ctx.beginPath();
+          ctx.roundRect(obs.x - obs.w/2, obs.y - obs.h/2, obs.w, obs.h, [6]);
+          ctx.fill();
+          ctx.fillStyle = '#fef08a';
+          ctx.font = '22px sans-serif';
+          ctx.fillText('🐎', obs.x - 12, obs.y + 8);
+        } else {
+          ctx.fillStyle = '#0f766e';
+          ctx.beginPath();
+          ctx.arc(obs.x, obs.y, obs.w / 2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#fde047';
+          ctx.font = '16px sans-serif';
+          ctx.fillText('💡', obs.x - 8, obs.y + 6);
+        }
+
+        // Collision Check
+        if (Math.hypot(becakX - obs.x, (height - 110) - obs.y) < 32) {
+          gameOver();
+        }
+
+        if (obs.y > height + 80) obstacles.splice(i, 1);
+      }
+
+      // Draw Passengers / Turis
+      for (let i = passengers.length - 1; i >= 0; i--) {
+        const p = passengers[i];
+        if (isPlaying) p.y += speed * 0.85;
+
+        ctx.fillStyle = '#f59e0b';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = '18px sans-serif';
+        ctx.fillText('🧳', p.x - 9, p.y + 6);
+
+        // Pickup
+        if (Math.hypot(becakX - p.x, (height - 110) - p.y) < 36) {
+          score += 350;
+          playBeep(1046, 'sine', 0.1, 0.2);
+          setTimeout(() => playBeep(1318, 'sine', 0.15, 0.2), 60);
+          passengers.splice(i, 1);
+        }
+
+        if (p.y > height + 80) passengers.splice(i, 1);
+      }
+
+      // Draw Becak (Player)
+      ctx.save();
+      ctx.translate(becakX, height - 110);
+      ctx.rotate(becakAngle);
+
+      // Rear single wheel
+      ctx.fillStyle = '#020617';
+      ctx.fillRect(-4, 18, 8, 18);
+      // Bicycle frame
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(-2, 0, 4, 20);
+
+      // Passenger cabin (Front)
+      ctx.fillStyle = '#e53935';
+      ctx.beginPath();
+      ctx.roundRect(-20, -28, 40, 30, [8]);
+      ctx.fill();
+
+      // Canopy roof
+      ctx.fillStyle = '#b91c1c';
+      ctx.beginPath();
+      ctx.roundRect(-16, -24, 32, 22, [4]);
+      ctx.fill();
+
+      // Front Wheels (Left & Right)
+      ctx.fillStyle = '#020617';
+      ctx.fillRect(-24, -22, 6, 20);
+      ctx.fillRect(18, -22, 6, 20);
+
+      // Driver Cap
+      ctx.fillStyle = '#f59e0b';
+      ctx.beginPath();
+      ctx.arc(0, 10, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+
+      requestAnimationFrame(loop);
+    }
+    loop();
+  </script>
+</body>
+</html>
+

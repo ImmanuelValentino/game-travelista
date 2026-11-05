@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Kamus Kelana: Kata Tersembunyi - Travelista Games</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: space-between; color: #fff; padding: 16px 10px; }
+    .header { width: 100%; max-width: 380px; display: flex; justify-content: space-between; align-items: center; }
+    .badge { background: rgba(30, 41, 59, 0.9); color: #fff; padding: 6px 14px; border-radius: 9999px; font-weight: 800; font-size: 13px; border: 1px solid rgba(255,255,255,0.15); }
+    .badge span { color: #f59e0b; }
+
+    /* Crossword Target Boxes */
+    .board { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; width: 100%; max-width: 360px; }
+    .word-row { display: flex; gap: 6px; }
+    .letter-box { width: 38px; height: 38px; background: rgba(30, 41, 59, 0.7); border: 2px solid rgba(255,255,255,0.2); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 900; color: transparent; transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+    .letter-box.revealed { background: #e53935; border-color: #f87171; color: #fff; transform: scale(1.05); box-shadow: 0 4px 12px rgba(229, 57, 53, 0.4); }
+
+    /* Word Candidate Bubble */
+    .current-word { height: 36px; padding: 6px 18px; background: rgba(15, 23, 42, 0.85); border: 1px solid #38bdf8; border-radius: 9999px; color: #38bdf8; font-weight: 900; font-size: 16px; letter-spacing: 2px; min-width: 120px; text-align: center; }
+
+    /* Letter Wheel Area */
+    .wheel-wrap { position: relative; width: 220px; height: 220px; margin-bottom: 10px; }
+    #wheel-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .letter-node { position: absolute; width: 48px; height: 48px; border-radius: 50%; background: #1e293b; border: 3px solid #64748b; color: #fff; font-size: 20px; font-weight: 900; display: flex; align-items: center; justify-content: center; cursor: pointer; transform: translate(-50%, -50%); transition: background 0.15s, border 0.15s, transform 0.15s; }
+    .letter-node.selected { background: #e53935; border-color: #fca5a5; transform: translate(-50%, -50%) scale(1.15); box-shadow: 0 0 15px rgba(229, 57, 53, 0.7); }
+
+    /* Modals */
+    .modal { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.94); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; text-align: center; padding: 24px; z-index: 50; }
+    .btn { background: #e53935; color: #fff; border: none; padding: 12px 28px; border-radius: 12px; font-weight: 800; font-size: 15px; cursor: pointer; transition: all 0.2s; margin-top: 16px; box-shadow: 0 8px 20px rgba(229, 57, 53, 0.4); }
+    .btn:hover { background: #c62828; transform: translateY(-2px); }
+    .title { font-size: 24px; font-weight: 900; margin-bottom: 6px; }
+    .subtitle { font-size: 13px; color: #94a3b8; max-width: 320px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="badge" id="level-title">Destinasi 1: Pulau Dewata</span>
+    <span class="badge">Skor: <span id="score-val">0</span> pts</span>
+  </div>
+
+  <div class="board" id="crossword-board"></div>
+
+  <div class="current-word" id="current-word">KATA</div>
+
+  <div class="wheel-wrap">
+    <canvas id="wheel-canvas" width="220" height="220"></canvas>
+    <div id="letters-container"></div>
+  </div>
+
+  <!-- Start Modal -->
+  <div class="modal" id="start-modal">
+    <div style="font-size: 48px; margin-bottom: 8px;">🧭🗺️</div>
+    <h1 class="title">Kamus Kelana: Kata Tersembunyi</h1>
+    <p class="subtitle">Hubungkan huruf pada roda kompas untuk mengungkap nama-nama destinasi wisata nusantara tersembunyi!</p>
+    <div style="margin-top: 14px; font-size: 11px; color: #cbd5e1; background: rgba(255,255,255,0.08); padding: 6px 14px; border-radius: 8px;">
+      <b>TARIK GARIS ANTAR HURUF</b> menggunakan jari / mouse
+    </div>
+    <button class="btn" id="start-btn">Jelajahi Kata</button>
+  </div>
+
+  <!-- Win Modal -->
+  <div class="modal" id="win-modal" style="display: none;">
+    <div style="font-size: 48px; margin-bottom: 8px;">🏆✈️</div>
+    <h2 class="title" style="color: #4ade80;">Destinasi Terungkap!</h2>
+    <p class="subtitle" id="win-trivia">Semua kata destinasi berhasil kamu tebak dengan sempurna.</p>
+    <div style="font-size: 24px; font-weight: 900; color: #f59e0b; margin-top: 10px;" id="final-score">0 pts</div>
+    <button class="btn" id="next-btn">Destinasi Selanjutnya</button>
+  </div>
+
+  <script>
+    const boardEl = document.getElementById('crossword-board');
+    const lettersContainer = document.getElementById('letters-container');
+    const currentWordEl = document.getElementById('current-word');
+    const levelTitle = document.getElementById('level-title');
+    const scoreVal = document.getElementById('score-val');
+    const canvas = document.getElementById('wheel-canvas');
+    const ctx = canvas.getContext('2d');
+    const startModal = document.getElementById('start-modal');
+    const winModal = document.getElementById('win-modal');
+    const winTrivia = document.getElementById('win-trivia');
+    const finalScore = document.getElementById('final-score');
+    const startBtn = document.getElementById('start-btn');
+    const nextBtn = document.getElementById('next-btn');
+
+    // Audio SFX Marimba
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let actx = null;
+    function initAudio() {
+      if (!actx) actx = new AudioCtx();
+      if (actx.state === 'suspended') actx.resume();
+    }
+    const marimbaNotes = [523, 587, 659, 698, 784, 880];
+    function playMarimba(index) {
+      initAudio();
+      try {
+        const freq = marimbaNotes[index % marimbaNotes.length];
+        const osc = actx.createOscillator(), gain = actx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, actx.currentTime);
+        gain.gain.setValueAtTime(0.2, actx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, actx.currentTime + 0.25);
+        osc.connect(gain); gain.connect(actx.destination);
+        osc.start(); osc.stop(actx.currentTime + 0.25);
+      } catch(e){}
+    }
+
+    const LEVELS = [
+      {
+        title: "Destinasi 1: Bali Eksotis",
+        letters: ["K", "U", "T", "A", "B", "L", "I"],
+        words: ["KUTA", "BALI"],
+        trivia: "KUTA & BALI: Surga pantai selancar dan kebudayaan Pulau Dewata."
+      },
+      {
+        title: "Destinasi 2: Alam Jawa Timur",
+        letters: ["B", "R", "O", "M", "O", "P", "S"],
+        words: ["BROMO", "PASIR"],
+        trivia: "BROMO: Kaldera gunung berapi dengan hamparan lautan pasir berbisik."
+      },
+      {
+        title: "Destinasi 3: Bahari Flores",
+        letters: ["K", "O", "M", "O", "D", "O", "L", "A"],
+        words: ["KOMODO", "LABUAN"],
+        trivia: "LABUAN BAJO & KOMODO: Habitat naga purba dan perairan laut karang kristal."
+      }
+    ];
+
+    let currentLevel = 0;
+    let score = 0;
+    let selectedIndices = [];
+    let isDragging = false;
+    let currentInput = "";
+    let revealedWords = new Set();
+    let letterNodes = [];
+
+    function setupLevel() {
+      const lvl = LEVELS[currentLevel % LEVELS.length];
+      levelTitle.innerText = lvl.title;
+      revealedWords.clear();
+      boardEl.innerHTML = '';
+      lettersContainer.innerHTML = '';
+      currentWordEl.innerText = 'TARIK HURUF';
+      letterNodes = [];
+
+      // Render Crossword Rows
+      lvl.words.forEach(word => {
+        const row = document.createElement('div');
+        row.className = 'word-row';
+        row.dataset.word = word;
+        for (let i = 0; i < word.length; i++) {
+          const box = document.createElement('div');
+          box.className = 'letter-box';
+          box.innerText = word[i];
+          row.appendChild(box);
+        }
+        boardEl.appendChild(row);
+      });
+
+      // Render Circular Letter Wheel
+      const n = lvl.letters.length;
+      const R = 80;
+      const cx = 110, cy = 110;
+
+      lvl.letters.forEach((l, i) => {
+        const angle = (i * 2 * Math.PI) / n - Math.PI / 2;
+        const x = cx + R * Math.cos(angle);
+        const y = cy + R * Math.sin(angle);
+
+        const node = document.createElement('div');
+        node.className = 'letter-node';
+        node.style.left = `${x}px`;
+        node.style.top = `${y}px`;
+        node.innerText = l;
+        node.dataset.index = i;
+        node.dataset.letter = l;
+        node.dataset.x = x;
+        node.dataset.y = y;
+
+        lettersContainer.appendChild(node);
+        letterNodes.push({ el: node, letter: l, x, y, idx: i });
+      });
+    }
+
+    // Touch & Mouse Drag Handlers
+    function startConnect(e) {
+      initAudio();
+      isDragging = true;
+      selectedIndices = [];
+      currentInput = "";
+      checkPointerHit(e);
+    }
+
+    function moveConnect(e) {
+      if (!isDragging) return;
+      checkPointerHit(e);
+      drawLines(e);
+    }
+
+    function endConnect() {
+      if (!isDragging) return;
+      isDragging = false;
+      ctx.clearRect(0, 0, 220, 220);
+
+      // Verify word
+      const lvl = LEVELS[currentLevel % LEVELS.length];
+      if (lvl.words.includes(currentInput) && !revealedWords.has(currentInput)) {
+        revealedWords.add(currentInput);
+        score += currentInput.length * 250;
+        scoreVal.innerText = score.toLocaleString('id-ID');
+
+        // Reveal row
+        const row = boardEl.querySelector(`[data-word="${currentInput}"]`);
+        if (row) {
+          row.querySelectorAll('.letter-box').forEach(b => b.classList.add('revealed'));
+        }
+
+        // Check level win
+        if (revealedWords.size === lvl.words.length) {
+          winTrivia.innerText = lvl.trivia;
+          finalScore.innerText = score.toLocaleString('id-ID') + ' pts';
+          setTimeout(() => {
+            winModal.style.display = 'flex';
+            if (window.parent) {
+              window.parent.postMessage({
+                type: 'GAME_OVER',
+                gameId: 'kamus-kelana',
+                score: score
+              }, '*');
+            }
+          }, 500);
+        }
+      }
+
+      // Reset
+      letterNodes.forEach(n => n.el.classList.remove('selected'));
+      selectedIndices = [];
+      currentInput = "";
+      currentWordEl.innerText = 'TARIK HURUF';
+    }
+
+    function checkPointerHit(e) {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      const px = clientX - rect.left;
+      const py = clientY - rect.top;
+
+      letterNodes.forEach(n => {
+        if (Math.hypot(px - n.x, py - n.y) < 26) {
+          if (!selectedIndices.includes(n.idx)) {
+            selectedIndices.push(n.idx);
+            n.el.classList.add('selected');
+            currentInput += n.letter;
+            currentWordEl.innerText = currentInput;
+            playMarimba(selectedIndices.length);
+          }
+        }
+      });
+    }
+
+    function drawLines(e) {
+      ctx.clearRect(0, 0, 220, 220);
+      if (selectedIndices.length === 0) return;
+
+      ctx.strokeStyle = '#e53935';
+      ctx.lineWidth = 6;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+
+      selectedIndices.forEach((idx, i) => {
+        const n = letterNodes[idx];
+        if (i === 0) ctx.moveTo(n.x, n.y);
+        else ctx.lineTo(n.x, n.y);
+      });
+
+      // Pointer follower
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      ctx.lineTo(clientX - rect.left, clientY - rect.top);
+      ctx.stroke();
+    }
+
+    const wrap = document.querySelector('.wheel-wrap');
+    wrap.addEventListener('pointerdown', startConnect);
+    window.addEventListener('pointermove', moveConnect);
+    window.addEventListener('pointerup', endConnect);
+
+    startBtn.addEventListener('click', () => {
+      startModal.style.display = 'none';
+      setupLevel();
+    });
+
+    nextBtn.addEventListener('click', () => {
+      winModal.style.display = 'none';
+      currentLevel++;
+      setupLevel();
+    });
+  </script>
+</body>
+</html>
+

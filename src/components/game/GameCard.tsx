@@ -31,22 +31,47 @@ export default function GameCard({ game }: GameCardProps) {
     return gradients[index];
   };
 
-  const getEmojiByCategory = (category: string) => {
-    switch (category) {
-      case "arcade":
-        return "🕹️";
-      case "adventure":
-        return "🧭";
-      case "puzzle":
-        return "🧩";
-      case "action":
-        return "⚡";
-      case "casual":
+  const getEmojiByGame = (game: Game) => {
+    switch (game.slug) {
+      case "nusantara-runner":
+        return "🏃‍♂️";
+      case "kapal-feri":
+        return "🚢";
+      case "packing-master":
+        return "🧳";
+      case "becak-drift":
+        return "🛺";
+      case "candi-stacker":
+        return "🛕";
+      case "batik-flow":
+        return "🎨";
+      case "layangan-sanur":
+        return "🪁";
+      case "kopi-klotok":
         return "☕";
-      case "sports":
-        return "⚽";
+      case "lembah-bromo":
+        return "🪂";
+      case "pasar-terapung":
+        return "🛶";
+      case "kamus-kelana":
+        return "🗺️";
       default:
-        return "🎮";
+        switch (game.category) {
+          case "arcade":
+            return "🕹️";
+          case "adventure":
+            return "🧭";
+          case "puzzle":
+            return "🧩";
+          case "action":
+            return "⚡";
+          case "casual":
+            return "☕";
+          case "sports":
+            return "⚽";
+          default:
+            return "🎮";
+        }
     }
   };
 
@@ -62,7 +87,7 @@ export default function GameCard({ game }: GameCardProps) {
         )} flex flex-col items-center justify-center p-3 text-white transition-transform duration-500 group-hover:scale-110`}
       >
         <span className="text-4xl sm:text-5xl filter drop-shadow-md group-hover:rotate-6 transition-transform">
-          {getEmojiByCategory(game.category)}
+          {getEmojiByGame(game)}
         </span>
       </div>
 

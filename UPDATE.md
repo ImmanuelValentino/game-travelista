@@ -8,6 +8,23 @@ Dokumen ini mencatat seluruh riwayat pembaruan, perbaikan bug, dan penambahan fi
 
 ---
 
+## [1.5.0] - 2026-11-03
+### Added & Changed (Zero-Asset Games & No More Duplicates)
+- **Eliminasi Game Duplikat / Placeholder:** Menghapus seluruh link fallback duplikat pada 9 game kemarin dan menggantinya dengan implementasi game mandiri.
+- **Implementasi 8 Game Baru dari `list-game2.md`:**
+  1. `becak-drift` (`/games/becak-drift/`): Top-down micro racing & drift becak Malioboro Jogja.
+  2. `candi-stacker` (`/games/candi-stacker/`): Precision tower stacker balok andesit Candi Borobudur dengan audio gamelan.
+  3. `batik-flow` (`/games/batik-flow/`): Rotating pipe puzzle sambung ukiran lilin malam canting kain batik mori.
+  4. `layangan-sanur` (`/games/layangan-sanur/`): Action tension battle layangan aduan bebean di Pantai Sanur Bali.
+  5. `kopi-klotok` (`/games/kopi-klotok/`): Rhythm barista menyeduh tetesan kopi & biji panggang di cangkir tanah liat.
+  6. `lembah-bromo` (`/games/lembah-bromo/`): Momentum flight paralayang menukik melintasi bukit pasir Bromo.
+  7. `pasar-terapung` (`/games/pasar-terapung/`): Falling fruit catcher perahu jukung di Sungai Martapura Banjarmasin.
+  8. `kamus-kelana` (`/games/kamus-kelana/`): Word connect & teka-teki silang kosakata destinasi pariwisata nusantara.
+- **100% Unique Game Pathing:** Setiap game pada katalog utama kini memiliki direktori dan entry point mandiri (`/games/[slug]/index.html`), sehingga saat diklik tidak akan membuka game yang salah.
+- **Enhanced Friv Card Icons:** Menambahkan mapping ikon tematik unik untuk setiap game agar tampilan grid Friv semakin semarak dan mudah dikenali.
+
+---
+
 ## [1.4.0] - 2026-11-02
 ### Added & Changed
 - **Official Brand Logo Asset:** Mengganti logo teks di `Navbar.tsx` dan `Footer.tsx` dengan aset gambar resmi `travelista-logo-light.png` beresolusi tajam.
