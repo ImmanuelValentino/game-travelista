@@ -20,7 +20,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Travelista Games - Portal Game Web Instan Ala Friv & Poki",
+  title: "Travelista Games",
   description:
     "Mainkan ratusan game petualangan, arcade, puzzle, dan kuliner nusantara seru gratis tanpa download di Travelista Games!",
   keywords: [
@@ -32,6 +32,14 @@ export const metadata: Metadata = {
     "game html5",
   ],
   authors: [{ name: "Travelista Indonesia" }],
+  icons: {
+    icon: [
+      { url: "/travelista-logo-gram.png", type: "image/png" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    shortcut: "/travelista-logo-gram.png",
+    apple: "/travelista-logo-gram.png",
+  },
 };
 
 export default function RootLayout({

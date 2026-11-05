@@ -8,6 +8,13 @@ Dokumen ini mencatat seluruh riwayat pembaruan, perbaikan bug, dan penambahan fi
 
 ---
 
+## [1.5.1] - 2026-11-05
+### Changed & Fixed (Web Title & Official Favicon)
+- **Web Title Optimization:** Mengubah metadata title tab browser menjadi ringkas dan tepat: **`Travelista Games`** (menghilangkan suffix deskripsi panjang pada tab title).
+- **Official Brand Favicon (Logo Gram):** Mengganti favicon bawaan Next.js "N" dengan ikon resmi **`travelista-logo-gram.png`** (emblem lingkaran 'T' Travelista) untuk `favicon.ico`, `icon.png`, dan `apple-icon.png`, sehingga tab browser menampilkan logo resmi Travelista secara tajam dan konsisten.
+
+---
+
 ## [1.5.0] - 2026-11-03
 ### Added & Changed (Zero-Asset Games & No More Duplicates)
 - **Eliminasi Game Duplikat / Placeholder:** Menghapus seluruh link fallback duplikat pada 9 game kemarin dan menggantinya dengan implementasi game mandiri.
